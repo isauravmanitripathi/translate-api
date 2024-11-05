@@ -1,15 +1,16 @@
 # Multi-Language Translation API
 
-A FastAPI-based translation service that supports multiple languages across different regions, including North America, South America, Europe, India, and East Asia. The API provides secure endpoints with API key authentication and admin capabilities for managing API keys.
+A robust FastAPI-based translation service that supports multiple languages across different regions. The API provides secure endpoints with API key authentication and includes features for both single and multiple language translations. It supports languages from North America, South America, Europe, India, and East Asia.
 
 ## Features
 
-- Multi-language translation support with regional variants
-- API key authentication
+- Single and multi-language translation support (up to 5 languages at once)
+- Regional language variants
+- API key authentication system
 - Admin panel for API key management
-- Support for both direct text translation and file uploads
 - Automatic language detection
-- Comprehensive language support for:
+- Support for long text translations
+- Comprehensive language coverage:
   - North American languages (US English, Canadian English, Mexican Spanish)
   - South American languages (Brazilian Portuguese, regional Spanish variants)
   - European languages (French, German, Italian, Spanish)
@@ -27,8 +28,10 @@ cd translation-api
 2. Create and activate virtual environment:
 ```bash
 python -m venv .venv
+
 # For Unix/macOS:
 source .venv/bin/activate
+
 # For Windows:
 .venv\Scripts\activate
 ```
@@ -47,13 +50,13 @@ echo "ADMIN_ACCESS_KEY=your_admin_key_here" > .env
 
 ```
 translation-api/
-├── .env
-├── main.py
-├── database.py
-├── auth.py
-├── api_key_manager.py
-├── translation_service.py
-└── translation_api.db  # Will be created automatically
+├── .env                    # Environment variables
+├── main.py                # Main FastAPI application
+├── database.py            # Database models and configuration
+├── auth.py               # Authentication logic
+├── api_key_manager.py    # API key management
+├── translation_service.py # Translation logic
+└── translation_api.db    # SQLite database (auto-created)
 ```
 
 ## Running the API
@@ -63,18 +66,66 @@ Start the server:
 python main.py
 ```
 
-The API will be available at `http://localhost:8000`
-API documentation will be available at `http://localhost:8000/docs`
+The API will be running at:
+- API Endpoints: `http://localhost:8000`
+- Interactive Documentation: `http://localhost:8000/docs`
 
-## API Usage
+## API Usage Guide
 
-### Authentication
+### Language Information
 
-All endpoints require an API key to be passed in the `X-API-Key` header.
+1. Get list of supported languages by region:
+```bash
+curl -X GET "http://localhost:8000/languages" \
+     -H "X-API-Key: your_api_key"
+```
+
+2. Get flat list of all supported languages:
+```bash
+curl -X GET "http://localhost:8000/languages/flat" \
+     -H "X-API-Key: your_api_key"
+```
+
+### Translation Endpoints
+
+1. Single Language Translation:
+```bash
+curl -X POST "http://localhost:8000/translate/text" \
+     -H "X-API-Key: your_api_key" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "text": "Hello, how are you?",
+       "target_language": "hindi",
+       "source_language": "english_us"
+     }'
+```
+
+2. Multi-Language Translation (up to 5 languages):
+```bash
+curl -X POST "http://localhost:8000/translate/multi" \
+     -H "X-API-Key: your_api_key" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "text": "Hello, how are you?",
+       "target_languages": ["hindi", "spanish", "french", "japanese", "german"],
+       "source_language": "english_us"
+     }'
+```
+
+3. Auto-detect source language:
+```bash
+curl -X POST "http://localhost:8000/translate/text" \
+     -H "X-API-Key: your_api_key" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "text": "Bonjour, comment allez-vous?",
+       "target_language": "hindi"
+     }'
+```
 
 ### Admin Operations
 
-1. Generate a new API key:
+1. Generate new API key:
 ```bash
 curl -X POST "http://localhost:8000/admin/generate-key" \
      -H "X-API-Key: your_admin_key_here" \
@@ -99,57 +150,9 @@ curl -X POST "http://localhost:8000/admin/deactivate-key" \
      -d '"api_key_to_deactivate"'
 ```
 
-### Translation Operations
-
-1. Get list of supported languages by region:
-```bash
-curl -X GET "http://localhost:8000/languages" \
-     -H "X-API-Key: your_api_key"
-```
-
-2. Get flat list of supported languages:
-```bash
-curl -X GET "http://localhost:8000/languages/flat" \
-     -H "X-API-Key: your_api_key"
-```
-
-3. Translate text (with auto language detection):
-```bash
-curl -X POST "http://localhost:8000/translate/text" \
-     -H "X-API-Key: your_api_key" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "text": "Hello, how are you?",
-       "target_language": "hindi"
-     }'
-```
-
-4. Translate text (with specified source language):
-```bash
-curl -X POST "http://localhost:8000/translate/text" \
-     -H "X-API-Key: your_api_key" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "text": "Hello, how are you?",
-       "target_language": "spanish_mexico",
-       "source_language": "english_us"
-     }'
-```
-
-### Example Language Codes
-
-You can use either the full language name (lowercase with underscores) or language codes:
-
-- English (US): `english_us` or `en-US`
-- Spanish (Mexico): `spanish_mexico` or `es-MX`
-- Hindi: `hindi` or `hi`
-- French: `french` or `fr`
-- Japanese: `japanese` or `ja`
-- Portuguese (Brazil): `portuguese_brazil` or `pt-BR`
-
 ## Response Formats
 
-### Successful Translation Response
+### Single Language Translation Response
 ```json
 {
   "translated_text": "नमस्ते, आप कैसे हैं?",
@@ -158,45 +161,104 @@ You can use either the full language name (lowercase with underscores) or langua
 }
 ```
 
-### Error Response
+### Multi-Language Translation Response
 ```json
 {
-  "detail": "Translation failed: Invalid language code"
+  "translations": {
+    "hindi": "नमस्ते, आप कैसे हैं?",
+    "spanish": "¡Hola! ¿Cómo estás?",
+    "french": "Bonjour, comment allez-vous?",
+    "japanese": "こんにちは、お元気ですか？",
+    "german": "Hallo, wie geht es dir?"
+  },
+  "source_language": "english_us",
+  "original_text": "Hello, how are you?"
 }
 ```
+
+## Supported Languages
+
+### Example Language Codes
+You can use either the full language name (lowercase with underscores) or language codes:
+
+North America:
+- English (US): `english_us` or `en-US`
+- English (Canada): `english_canada` or `en-CA`
+- Spanish (Mexico): `spanish_mexico` or `es-MX`
+
+Europe:
+- French: `french` or `fr`
+- German: `german` or `de`
+- Italian: `italian` or `it`
+- Spanish (Spain): `spanish_spain` or `es-ES`
+
+India:
+- Hindi: `hindi` or `hi`
+- Bengali: `bengali` or `bn`
+- Telugu: `telugu` or `te`
+- Tamil: `tamil` or `ta`
+
+East Asia:
+- Japanese: `japanese` or `ja`
+- Korean: `korean` or `ko`
+- Chinese (Simplified): `chinese_simplified` or `zh-CN`
+- Chinese (Traditional): `chinese_traditional` or `zh-TW`
 
 ## Error Handling
 
 The API includes comprehensive error handling for:
 - Invalid API keys
 - Invalid language codes
+- Maximum language limit exceeded (multi-translation)
 - Translation service failures
-- Rate limiting
 - Server errors
 
-## Development
-
-To add new features or modify the API:
-
-1. Fork the repository
-2. Create a new branch
-3. Make your changes
-4. Submit a pull request
+Common error responses:
+```json
+{
+  "detail": "Invalid API key"
+}
+```
+```json
+{
+  "detail": "Maximum 5 target languages are allowed per request"
+}
+```
 
 ## Limitations
 
-- Maximum text length per request: 5000 characters (longer texts are automatically chunked)
+- Maximum 5 target languages per multi-translation request
+- Maximum text length: 5000 characters per chunk (automatically handled)
 - Rate limiting may apply based on the translation service
 - Some language pairs might not be directly translatable
 
+## Security
+
+- All endpoints require API key authentication
+- Admin operations require special admin API key
+- API keys can be deactivated if compromised
+- Database is SQLite with proper security practices
+
+## Support
+
+For support:
+1. Check the API documentation at `/docs`
+2. Ensure you're using supported language codes
+3. Verify your API key is active
+4. Contact support if issues persist
+
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+1. Fork the repository
+2. Create your feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
 
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-## Support
+---
 
-For support, please open an issue in the GitHub repository or contact the maintainers.
+For the latest updates and more information, please visit our [GitHub repository](repository-url).

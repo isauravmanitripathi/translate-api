@@ -1,15 +1,20 @@
+# File: main.py
 from fastapi import FastAPI, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from typing import Optional, List, Dict
 from datetime import datetime
+from sqlalchemy.orm import Session
 import uvicorn
-from enum import Enum
-from sqlalchemy.orm import Session  # Add this import
 
 from database import SessionLocal
 from auth import verify_api_key, get_db
 from api_key_manager import generate_api_key, list_api_keys, deactivate_api_key
-from translation_service import translate_text, get_language_regions, get_supported_languages
+from translation_service import (
+    translate_text, 
+    translate_text_to_multiple_languages,
+    get_language_regions, 
+    get_supported_languages
+)
 
 app = FastAPI(title="Regional Language Translation API")
 
@@ -17,6 +22,19 @@ class TextTranslation(BaseModel):
     text: str
     target_language: str
     source_language: Optional[str] = Field(default='auto', description="Leave as 'auto' for automatic detection")
+
+class MultiLanguageTranslation(BaseModel):
+    text: str
+    target_languages: List[str]
+    source_language: Optional[str] = Field(default='auto', description="Leave as 'auto' for automatic detection")
+
+    @validator('target_languages')
+    def validate_target_languages(cls, v):
+        if not v:
+            raise ValueError("At least one target language must be specified")
+        if len(v) > 5:
+            raise ValueError("Maximum 5 target languages are allowed")
+        return v
 
 class APIKeyCreate(BaseModel):
     description: str
@@ -53,7 +71,7 @@ async def translate_text_endpoint(
     Example: {"text": "Hello", "target_language": "hindi", "source_language": "english_us"}
     """
     try:
-        translated_text = translate_text(
+        translated_text = await translate_text(
             translation.text,
             translation.target_language,
             translation.source_language
@@ -62,6 +80,38 @@ async def translate_text_endpoint(
             "translated_text": translated_text,
             "source_language": translation.source_language,
             "target_language": translation.target_language
+        }
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Translation failed: {str(e)}"
+        )
+
+@app.post("/translate/multi")
+async def translate_text_multiple_languages(
+    translation: MultiLanguageTranslation,
+    auth_result: dict = Depends(verify_api_key)
+):
+    """
+    Translate text to multiple languages simultaneously (maximum 5 languages)
+    Example: {
+        "text": "Hello, how are you?",
+        "target_languages": ["hindi", "spanish", "french"],
+        "source_language": "english_us"
+    }
+    """
+    try:
+        translations = await translate_text_to_multiple_languages(
+            translation.text,
+            translation.target_languages,
+            translation.source_language
+        )
+        return {
+            "translations": translations,
+            "source_language": translation.source_language,
+            "original_text": translation.text
         }
     except HTTPException as he:
         raise he
