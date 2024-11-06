@@ -1,142 +1,90 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import FileResponse
-from deep_translator import GoogleTranslator
-import uvicorn
-from pydantic import BaseModel
-import tempfile
+from gtts import gTTS
 import os
-import time
-from typing import Optional
+from langdetect import detect
+import sys
+from datetime import datetime
 
-app = FastAPI(title="Hindi Translation API")
-translator = GoogleTranslator(source='en', target='hi')
-
-class TextTranslation(BaseModel):
-    text: str
-
-async def translate_text(text: str, retries: int = 3) -> Optional[str]:
-    """Translate text with retry mechanism"""
-    for attempt in range(retries):
-        try:
-            if not text.strip():
-                return ""
-            # deep_translator has a character limit, so we need to handle long texts
-            if len(text) > 5000:
-                # Split into smaller chunks at sentence boundaries
-                chunks = text.split('. ')
-                translated_chunks = []
-                current_chunk = ""
-                
-                for chunk in chunks:
-                    if len(current_chunk) + len(chunk) < 5000:
-                        current_chunk += chunk + ". "
-                    else:
-                        if current_chunk:
-                            translated_chunks.append(translator.translate(current_chunk))
-                        current_chunk = chunk + ". "
-                
-                if current_chunk:
-                    translated_chunks.append(translator.translate(current_chunk))
-                
-                return " ".join(translated_chunks)
-            else:
-                return translator.translate(text)
-        except Exception as e:
-            if attempt == retries - 1:
-                raise HTTPException(
-                    status_code=500,
-                    detail=f"Translation failed after {retries} attempts: {str(e)}"
-                )
-            time.sleep(2 ** attempt)  # Exponential backoff
-
-async def process_file(file_path: str) -> str:
-    """Process a text file and translate its contents"""
-    output_path = file_path + "_translated.txt"
-    
+def detect_language(text):
+    """
+    Detect the language of the text
+    Returns language code compatible with gTTS
+    """
     try:
-        with open(file_path, 'r', encoding='utf-8') as input_file:
-            text = input_file.read()
-            
-        paragraphs = text.split('\n\n')
-        translated_paragraphs = []
+        # Detect language
+        lang = detect(text)
+        # Map some common language codes that might differ
+        lang_map = {
+            'zh-cn': 'zh-CN',
+            'zh-tw': 'zh-TW',
+            'zh': 'zh-CN'
+        }
+        return lang_map.get(lang, lang)
+    except:
+        # Default to English if detection fails
+        return 'en'
+
+def convert_text_file_to_speech(input_file_path):
+    """
+    Convert text file content to speech
+    Args:
+        input_file_path: Path to the input text file
+    """
+    try:
+        # Check if file exists
+        if not os.path.exists(input_file_path):
+            print(f"Error: File '{input_file_path}' not found!")
+            return
+
+        # Read the text file
+        print(f"Reading file: {input_file_path}")
+        with open(input_file_path, 'r', encoding='utf-8') as file:
+            text = file.read()
+
+        if not text.strip():
+            print("Error: File is empty!")
+            return
+
+        # Detect language
+        language = detect_language(text)
+        print(f"Detected language: {language}")
+
+        # Create output filename based on input filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base_name = os.path.splitext(os.path.basename(input_file_path))[0]
+        output_file = f"{base_name}_{timestamp}.mp3"
+
+        # Convert to speech
+        print("Converting text to speech...")
+        tts = gTTS(text=text, lang=language)
         
-        for paragraph in paragraphs:
-            if paragraph.strip():
-                translated_text = await translate_text(paragraph)
-                if translated_text:
-                    translated_paragraphs.append(translated_text)
+        # Save the audio file
+        print(f"Saving audio file as: {output_file}")
+        tts.save(output_file)
         
-        with open(output_path, 'w', encoding='utf-8') as output_file:
-            output_file.write('\n\n'.join(translated_paragraphs))
-            
-        return output_path
+        print("\nConversion completed successfully!")
+        print(f"Output file: {os.path.abspath(output_file)}")
+
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"File processing failed: {str(e)}"
-        )
+        print(f"\nAn error occurred: {str(e)}")
 
-@app.post("/translate/text")
-async def translate_text_endpoint(translation: TextTranslation):
-    """
-    Translate text from English to Hindi
-    
-    curl -X POST "http://localhost:8000/translate/text" \
-         -H "Content-Type: application/json" \
-         -d '{"text": "Hello, how are you?"}'
-    """
-    try:
-        translated_text = await translate_text(translation.text)
-        return {"translated_text": translated_text}
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Translation failed: {str(e)}"
-        )
-
-@app.post("/translate/file")
-async def translate_file_endpoint(file: UploadFile = File(...)):
-    """
-    Upload a text file and get back translated version
-    
-    curl -X POST "http://localhost:8000/translate/file" \
-         -F "file=@/path/to/your/file.txt"
-    """
-    if not file.filename.endswith('.txt'):
-        raise HTTPException(
-            status_code=400,
-            detail="Only .txt files are supported"
-        )
-    
-    # Create temporary file
-    temp_dir = tempfile.mkdtemp()
-    temp_path = os.path.join(temp_dir, file.filename)
-    
-    try:
-        # Save uploaded file
-        with open(temp_path, 'wb') as temp_file:
-            content = await file.read()
-            temp_file.write(content)
+def main():
+    # Get file path from user
+    while True:
+        file_path = input("\nPlease enter the path to your text file (or 'q' to quit): ").strip()
         
-        # Process the file
-        output_path = await process_file(temp_path)
-        
-        # Return the translated file
-        return FileResponse(
-            output_path,
-            media_type='text/plain',
-            filename=f"translated_{file.filename}"
-        )
-    
-    finally:
-        # Cleanup temporary files
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-        if os.path.exists(temp_path + "_translated.txt"):
-            os.remove(temp_path + "_translated.txt")
-        os.rmdir(temp_dir)
+        if file_path.lower() == 'q':
+            print("Goodbye!")
+            break
+            
+        convert_text_file_to_speech(file_path)
+        print("\n" + "="*50)
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Print welcome message
+    print("="*50)
+    print("Text File to Speech Converter")
+    print("This program will convert your text file to an MP3 audio file.")
+    print("Supported languages will be automatically detected.")
+    print("="*50)
+    
+    main()

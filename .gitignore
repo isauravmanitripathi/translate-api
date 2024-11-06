@@ -1,7 +1,2 @@
 .env
-
-
-curl -X POST "http://localhost:8000/translate/text" \
-     -H "X-API-Key: 5_8Qh_3mulZ0n0-RrrZsV1hX1gOD7qZ8jnhHkPabv0oY" \
-     -H "Content-Type: application/json" \
-     -d '{"text": "So india is a great country but we need to make sure that it is really true, but let's fucking face it kya madharchod desh h"}'
+translation_api.db
